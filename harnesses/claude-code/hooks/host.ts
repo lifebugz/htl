@@ -1,6 +1,6 @@
 import type { PromptOrigin } from 'claude-code'
 
-import type { Origin, Terms } from './tasks'
+import type { Origin, Terms } from './core/index'
 
 export const TOOL = 'mcp__htl__assign_task'
 

@@ -32,7 +32,7 @@ import {
   toolDescription,
   unreachable,
   validateRequest,
-} from './tasks'
+} from './core/index'
 
 const PANE = 'htl'
 const PANE_TITLE = 'HTL tasks'

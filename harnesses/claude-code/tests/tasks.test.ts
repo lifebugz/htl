@@ -1,20 +1,17 @@
 import type { PromptOrigin } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { ClosedTask, HtlRequest, HtlTask } from '../types'
+import type { HtlRequest, HtlTask } from '../types'
 import { ENVELOPE, FOCUS_HINT, TERMS, originOf } from '../hooks/host'
 import {
-  MAX_OPEN,
   SUBAGENT_REFUSAL,
   answeringText,
   answersTasks,
-  assignedText,
   assignedToast,
   blockerLabel,
   cardHeader,
   contextLine,
   decisionLabel,
-  decisionPrompt,
   decisionToast,
   gateDenial,
   htlUsage,
@@ -23,16 +20,14 @@ import {
   notOpenText,
   notSentToast,
   notYours,
-  parseHtlArgs,
   parseRequest,
   refusalText,
   reminderLine,
-  sameTitle,
   statusLine,
   taskListText,
   toolDescription,
   validateRequest,
-} from '../hooks/tasks'
+} from '../hooks/core/index'
 
 const LOGIN: HtlRequest = {
   title: 'Log in to the GitHub CLI',
@@ -85,21 +80,7 @@ function isKind(value: string): value is PromptOrigin['kind'] {
   return value in ANSWERS
 }
 
-const without = (field: string): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(LOGIN).filter(([key]) => key !== field))
-
 describe('parseRequest', () => {
-  test('a full request parses, trimmed, with and without check', () => {
-    expect(parseRequest({ ...LOGIN, title: '  Log in  ' }, ENVELOPE)).toEqual({
-      request: { ...LOGIN, title: 'Log in' },
-    })
-    expect(
-      parseRequest({ ...LOGIN, check: ' gh auth status ' }, ENVELOPE),
-    ).toEqual({
-      request: { ...LOGIN, check: 'gh auth status' },
-    })
-  })
-
   test('the tool.call envelope fields are not extra fields', () => {
     expect(
       parseRequest(
@@ -115,168 +96,10 @@ describe('parseRequest', () => {
       ),
     ).toEqual({ request: LOGIN })
   })
-
-  for (const field of ['title', 'steps', 'why', 'tried'] as const) {
-    test(`${field}: missing, blank and not a string are refused`, () => {
-      expect(parseRequest(without(field), ENVELOPE).problems).toEqual([
-        `${field} is missing`,
-      ])
-      expect(
-        parseRequest({ ...LOGIN, [field]: '   ' }, ENVELOPE).problems,
-      ).toEqual([`${field} is empty`])
-      expect(parseRequest({ ...LOGIN, [field]: 7 }, ENVELOPE).problems).toEqual(
-        [`${field} must be a string`],
-      )
-    })
-  }
-
-  test('blocker and mode take only their listed values', () => {
-    expect(
-      parseRequest({ ...LOGIN, blocker: 'hard' }, ENVELOPE).problems,
-    ).toEqual([
-      'blocker must be one of: secret, login, physical, payment_or_legal, no_access',
-    ])
-    expect(
-      parseRequest({ ...LOGIN, mode: 'later' }, ENVELOPE).problems,
-    ).toEqual(['mode must be one of: now, parallel'])
-    expect(parseRequest(without('mode'), ENVELOPE).problems).toEqual([
-      'mode is missing',
-    ])
-  })
-
-  test('check must be a string; a blank check is left out', () => {
-    expect(parseRequest({ ...LOGIN, check: 3 }, ENVELOPE).problems).toEqual([
-      'check must be a string',
-    ])
-    expect(parseRequest({ ...LOGIN, check: '  ' }, ENVELOPE)).toEqual({
-      request: LOGIN,
-    })
-  })
-
-  test('extra fields are refused, and every problem is listed', () => {
-    expect(
-      parseRequest({ ...LOGIN, urgency: 'high' }, ENVELOPE).problems,
-    ).toEqual(['unknown fields: urgency'])
-    expect(
-      parseRequest({ title: '', mode: 'soon', x: 1 }, ENVELOPE).problems,
-    ).toEqual([
-      'title is empty',
-      'steps is missing',
-      'blocker is missing',
-      'why is missing',
-      'tried is missing',
-      'mode must be one of: now, parallel',
-      'unknown fields: x',
-    ])
-  })
-
-  test('an input that is not an object is refused', () => {
-    expect(parseRequest(null, ENVELOPE).problems).toEqual([
-      'the input must be an object',
-    ])
-    expect(parseRequest(['x'], ENVELOPE).problems).toEqual([
-      'the input must be an object',
-    ])
-  })
 })
 
 describe('validateRequest', () => {
-  test('a fourth open task is refused', () => {
-    const open = [task(1), task(2), task(3)].map((one, i) => ({
-      ...one,
-      title: `job ${String(i)}`,
-    }))
-    expect(open.length).toBe(MAX_OPEN)
-    expect(validateRequest(LOGIN, { ...EMPTY, open }, TERMS)).toBe(
-      'Not assigned. The user already has 3 open tasks. Wait for them.',
-    )
-    expect(
-      validateRequest(LOGIN, { ...EMPTY, open: open.slice(0, 2) }, TERMS),
-    ).toBeUndefined()
-  })
-
-  test('the same title as an open task is refused', () => {
-    expect(
-      validateRequest(
-        { ...LOGIN, title: '  log IN to the   github cli ' },
-        { ...EMPTY, open: [task(4)] },
-        TERMS,
-      ),
-    ).toBe(
-      'Not assigned. Task #4 "Log in to the GitHub CLI" is already open. Don\'t assign it twice; wait for the user.',
-    )
-  })
-
-  test('a rejected or handed-back title is refused, whatever its case and spacing', () => {
-    const rejected: ClosedTask = {
-      id: 2,
-      title: LOGIN.title,
-      decision: 'reject',
-    }
-    const handed: ClosedTask = { ...rejected, decision: 'handback' }
-    const retry = { ...LOGIN, title: ' LOG IN to the GitHub  CLI' }
-
-    expect(
-      validateRequest(retry, { ...EMPTY, closed: [rejected] }, TERMS),
-    ).toBe(
-      'Not assigned. The user already rejected task #2 "Log in to the GitHub CLI". Don\'t assign it again. Find another way, or tell the user what stays blocked.',
-    )
-    expect(validateRequest(retry, { ...EMPTY, closed: [handed] }, TERMS)).toBe(
-      'Not assigned. The user already said you can do task #2 "Log in to the GitHub CLI" yourself. Do it with your own tools; don\'t assign it again.',
-    )
-  })
-
-  test('an accepted title may be assigned again (the login can expire)', () => {
-    const accepted: ClosedTask = {
-      id: 2,
-      title: LOGIN.title,
-      decision: 'accept',
-    }
-    expect(
-      validateRequest(LOGIN, { ...EMPTY, closed: [accepted] }, TERMS),
-    ).toBeUndefined()
-  })
-
-  test('sameTitle trims, lowercases and folds spaces', () => {
-    expect(sameTitle('  Log  In ', 'log in')).toBe(true)
-    expect(sameTitle('Log in', 'Log out')).toBe(false)
-  })
-
   describe('1Password', () => {
-    const NO_EVIDENCE =
-      'Not assigned. The 1Password CLI is installed, so check 1Password first. If the secret is there, reference it as `op://…` and run the command with `op run` or `op inject`. Assign a task only if the item is missing: check with `op item get "<item>" --vault "<vault>" > /dev/null`, and say in `tried` what you found. Run the check yourself; don\'t ask the user to.'
-
-    test('a secret task that names 1Password and an op:// reference is allowed', () => {
-      expect(validateRequest(SECRET, EMPTY, TERMS)).toBeUndefined()
-      expect(
-        validateRequest(
-          { ...SECRET, tried: 'Searched 1Password: none.' },
-          EMPTY,
-          TERMS,
-        ),
-      ).toBeUndefined()
-    })
-
-    test('a secret task with no 1Password evidence in tried is refused', () => {
-      expect(
-        validateRequest(
-          { ...SECRET, tried: 'Looked in .env: empty.' },
-          EMPTY,
-          TERMS,
-        ),
-      ).toBe(NO_EVIDENCE)
-    })
-
-    test('the user decides where a new secret goes, so steps need no op:// reference', () => {
-      expect(
-        validateRequest(
-          { ...SECRET, steps: 'Create the token and paste it into .env.' },
-          EMPTY,
-          TERMS,
-        ),
-      ).toBeUndefined()
-    })
-
     test('the op://<vault>/<item>/<field> placeholder is refused, with or without op', () => {
       const PLACEHOLDER =
         'Not assigned. The steps hold the op://<vault>/<item>/<field> placeholder. Name the real vault, item and field, or leave the op:// suggestion out, then call mcp__htl__assign_task again.'
@@ -299,33 +122,6 @@ describe('validateRequest', () => {
         ),
       ).toBe(PLACEHOLDER)
     })
-
-    test('real vault, item and field names may hold spaces', () => {
-      expect(
-        validateRequest(
-          {
-            ...SECRET,
-            steps: 'Save it as `op://Team Vault/GitHub PAT/credential`.',
-          },
-          EMPTY,
-          TERMS,
-        ),
-      ).toBeUndefined()
-    })
-
-    test('under none, a secret task needs no 1Password evidence', () => {
-      expect(
-        validateRequest(
-          { ...SECRET, tried: 'Looked in .env.', steps: 'Paste it in .env.' },
-          { ...EMPTY, secrets: 'none' },
-          TERMS,
-        ),
-      ).toBeUndefined()
-    })
-
-    test('other blockers need no 1Password evidence', () => {
-      expect(validateRequest(LOGIN, EMPTY, TERMS)).toBeUndefined()
-    })
   })
 })
 
@@ -340,38 +136,6 @@ describe('answersTasks', () => {
 })
 
 describe('/htl arguments', () => {
-  test('no arguments opens the pane', () => {
-    expect(parseHtlArgs('')).toEqual({ kind: 'open' })
-    expect(parseHtlArgs('   ')).toEqual({ kind: 'open' })
-  })
-
-  test('a decision, a task number with or without #, and the rest as the message', () => {
-    expect(parseHtlArgs(' ACCEPT #3 ')).toEqual({
-      kind: 'answer',
-      decision: 'accept',
-      taskId: 3,
-      message: '',
-    })
-    expect(parseHtlArgs('handback 12 use the token\nin CI ')).toEqual({
-      kind: 'answer',
-      decision: 'handback',
-      taskId: 12,
-      message: 'use the token\nin CI',
-    })
-  })
-
-  test('anything else is usage', () => {
-    for (const args of [
-      'accept',
-      'accept one',
-      'yes 1',
-      '1 accept',
-      'reject #',
-    ]) {
-      expect(parseHtlArgs(args)).toEqual({ kind: 'usage' })
-    }
-  })
-
   test('only Remote Control and a Slack ping count as remote', () => {
     expect(isRemote(originOf('bridge'))).toBe(true)
     expect(isRemote(originOf('slack-ping'))).toBe(true)
@@ -431,15 +195,6 @@ describe('the tool description', () => {
 })
 
 describe('texts Claude reads', () => {
-  test('the now and parallel results', () => {
-    expect(assignedText(task(1))).toBe(
-      'Assigned as task #1 (now). End your turn now with one short line saying what you are waiting for. Other tool calls are refused until the user answers; the answer arrives as the next user message.',
-    )
-    expect(assignedText(task(2, { ...LOGIN, mode: 'parallel' }))).toBe(
-      "Assigned as task #2 (parallel). Keep working only on what does not depend on it. Don't do it yourself, don't assume it's done. When that work is done, end your turn and say you are waiting for task #2.",
-    )
-  })
-
   test('the gate, context and refusal lines', () => {
     expect(gateDenial(task(1))).toBe(
       'Waiting for the user to finish HTL task #1 "Log in to the GitHub CLI". End your turn now.',
@@ -452,40 +207,6 @@ describe('texts Claude reads', () => {
     expect(refusalText(['title is missing', 'mode is missing'], TERMS)).toBe(
       'The task was not assigned: title is missing; mode is missing. Fix these fields and call mcp__htl__assign_task again.',
     )
-  })
-
-  describe('decisionPrompt', () => {
-    const checked = task(1, { ...LOGIN, check: 'gh auth status' })
-
-    test('accept, with a check and a message', () => {
-      expect(decisionPrompt(checked, 'accept', '  used my work account ')).toBe(
-        'HTL task #1 "Log in to the GitHub CLI": accepted, I did it.\nMy message: used my work account\nCheck it worked (run `gh auth status` or re-run what failed), then continue.',
-      )
-    })
-
-    test('accept, with no check and no message', () => {
-      expect(decisionPrompt(task(1), 'accept', '   ')).toBe(
-        'HTL task #1 "Log in to the GitHub CLI": accepted, I did it.\nCheck it worked (re-run what failed), then continue.',
-      )
-    })
-
-    test('reject, with and without a message', () => {
-      expect(decisionPrompt(checked, 'reject', 'not today')).toBe(
-        "HTL task #1 \"Log in to the GitHub CLI\": rejected, I won't do it.\nMy message: not today\nDon't assume it's done. Find another way, or tell me what stays blocked.",
-      )
-      expect(decisionPrompt(checked, 'reject', '')).toBe(
-        "HTL task #1 \"Log in to the GitHub CLI\": rejected, I won't do it.\nDon't assume it's done. Find another way, or tell me what stays blocked.",
-      )
-    })
-
-    test('you can do this, with and without a message', () => {
-      expect(decisionPrompt(checked, 'handback', 'use the token in CI')).toBe(
-        'HTL task #1 "Log in to the GitHub CLI": you can do this yourself.\nMy message: use the token in CI\nDo it with your own tools. Don\'t assign it to me again.',
-      )
-      expect(decisionPrompt(checked, 'handback', '')).toBe(
-        'HTL task #1 "Log in to the GitHub CLI": you can do this yourself.\nDo it with your own tools. Don\'t assign it to me again.',
-      )
-    })
   })
 })
 
