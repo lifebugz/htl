@@ -5,6 +5,7 @@ import type * as State from '../types'
 
 // types/index.d.ts must stay self-contained, so it repeats these core shapes.
 // [A] extends [B] would accept a dropped readonly; this form does not.
+// tsc does the check (bun run typecheck); the expect below only uses the values.
 type Same<A, B> =
   (<T>(value: T) => T extends A ? 1 : 2) extends <T>(
     value: T,

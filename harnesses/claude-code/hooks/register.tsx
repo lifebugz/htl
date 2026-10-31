@@ -4,14 +4,19 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Decision, HtlTask, SecretsMode, View } from '../types'
 import { ENVELOPE, FOCUS_HINT, TERMS, TOOL, originOf } from './host'
 import {
+  NO_OPEN_TASKS,
   SUBAGENT_REFUSAL,
   TOOL_NAME,
   answersTasks,
+  armedTask,
   answeringText,
   assignedText,
   assignedToast,
   blockerLabel,
   cardHeader,
+  cardIndex,
+  closedAfterCommit,
+  closedAfterRollback,
   contextLine,
   decisionLabel,
   decisionPrompt,
@@ -20,14 +25,19 @@ import {
   htlUsage,
   inputSchema,
   isRemote,
+  newTask,
+  nextTaskId,
   notOpenText,
   notSentToast,
   notYours,
+  openAfterCommit,
+  openAfterLift,
+  openAfterRollback,
   parseHtlArgs,
   parseRequest,
   refusalText,
   reminderLine,
-  statusLine,
+  statusText,
   taskListText,
   toolDescription,
   unreachable,
@@ -36,7 +46,6 @@ import {
 
 const PANE = 'htl'
 const PANE_TITLE = 'HTL tasks'
-const MAX_CLOSED = 100
 const FIRST_CARD: View = { step: 'decide', taskId: null }
 // The engine refuses $.prompt.submit from a command.run hook that still holds
 // the turn ("submit from a later event"), so a command's answer goes out on a
@@ -130,7 +139,7 @@ function showStatus(
   isPlaced: boolean,
   count: number,
 ): void {
-  $.ui.status(isPlaced || count === 0 ? undefined : statusLine(count, TERMS))
+  $.ui.status(statusText(isPlaced, count, TERMS))
 }
 
 async function notify($: EngineInterface, task: HtlTask): Promise<void> {
@@ -169,25 +178,17 @@ async function assign($: EngineInterface, e: unknown): Promise<string> {
   }
 
   const id = (await update($, nextId, n => n + 1)) - 1
-  const task: HtlTask = {
-    ...parsed.request,
-    id,
-    isArmed: parsed.request.mode === 'now',
-  }
+  const task = newTask(parsed.request, id)
   await update($, tasks, list => [...list, task])
   await notify($, task)
   return assignedText(task)
-}
-
-function lifted(task: HtlTask): HtlTask {
-  return task.isArmed ? { ...task, isArmed: false } : task
 }
 
 // Writes even when nothing is armed: a rollback's re-arm racing this prompt
 // then misses its version and re-reads gateLifts, instead of landing after it.
 async function disarm($: EngineInterface): Promise<readonly HtlTask[]> {
   gateLifts += 1
-  return update($, tasks, list => list.map(lifted))
+  return update($, tasks, openAfterLift)
 }
 
 async function commit(
@@ -204,12 +205,11 @@ async function commit(
   const lifts = gateLifts
   let armed: readonly number[] = []
   const remaining = await update($, tasks, list => {
-    armed = list.filter(one => one.isArmed).map(one => one.id)
-    return list.filter(one => one.id !== taskId).map(lifted)
+    const after = openAfterCommit(list, taskId)
+    armed = after.armed
+    return after.open
   })
-  await update($, closed, list =>
-    [...list, { id: task.id, title: task.title, decision }].slice(-MAX_CLOSED),
-  )
+  await update($, closed, list => closedAfterCommit(list, task, decision))
   await update($, view, () => FIRST_CARD)
 
   if (remaining.length > 0) {
@@ -237,22 +237,10 @@ async function rollback(
   $: EngineInterface,
   { task, armed, lifts }: Committed,
 ): Promise<void> {
-  const open = await update($, tasks, list => {
-    const back = list.some(one => one.id === task.id)
-      ? list
-      : [
-          ...list.filter(one => one.id < task.id),
-          { ...task, isArmed: false },
-          ...list.filter(one => one.id > task.id),
-        ]
-    if (gateLifts !== lifts) {
-      return back
-    }
-    return back.map(one =>
-      armed.includes(one.id) ? { ...one, isArmed: true } : one,
-    )
-  })
-  await update($, closed, list => list.filter(one => one.id !== task.id))
+  const open = await update($, tasks, list =>
+    openAfterRollback(list, task, armed, gateLifts === lifts),
+  )
+  await update($, closed, list => closedAfterRollback(list, task.id))
   await update($, view, (current): View =>
     current.step === 'decide' && current.taskId === null
       ? { step: 'decide', taskId: task.id }
@@ -302,7 +290,7 @@ async function openPane(
   isFromRemote: boolean,
 ): Promise<{ text?: string }> {
   if (open.length === 0) {
-    return { text: 'No open HTL tasks.' }
+    return { text: NO_OPEN_TASKS }
   }
   try {
     const opened = await $.ui.open({
@@ -334,11 +322,9 @@ async function showNext(
   open: readonly HtlTask[],
   taskId: number,
 ): Promise<unknown> {
-  const at = open.findIndex(task => task.id === taskId)
-  const following = open[(at + 1) % open.length] ?? open[0]
   return update($, view, (): View => ({
     step: 'decide',
-    taskId: following?.id ?? null,
+    taskId: nextTaskId(open, taskId),
   }))
 }
 
@@ -407,7 +393,7 @@ export const register: Register = on => {
     ) {
       return next(e)
     }
-    const armed = (await read($, tasks)).find(task => task.isArmed)
+    const armed = armedTask(await read($, tasks))
     if (armed === undefined) {
       return next(e)
     }
@@ -479,13 +465,10 @@ export const register: Register = on => {
         ? undefined
         : $.ui.resolve({ surface, component: e.component }).Input
 
-    const at = Math.max(
-      0,
-      open.findIndex(task => task.id === current.taskId),
-    )
+    const at = cardIndex(open, current.taskId)
     const task = open[at]
     if (task === undefined) {
-      return <Text dimColor>No open HTL tasks.</Text>
+      return <Text dimColor>{NO_OPEN_TASKS}</Text>
     }
 
     const card = (

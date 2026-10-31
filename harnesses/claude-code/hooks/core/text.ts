@@ -18,6 +18,8 @@ export function assignedText(task: HtlTask): string {
   }
 }
 
+export const NO_OPEN_TASKS = 'No open HTL tasks.'
+
 export const SUBAGENT_REFUSAL =
   'Only the main conversation can assign tasks; put the blocker in your final report.'
 
@@ -45,6 +47,14 @@ export function reminderLine(tasks: readonly HtlTask[], terms: Terms): string {
 
 export function statusLine(count: number, terms: Terms): string {
   return `${String(count)} ${count === 1 ? 'task' : 'tasks'} waiting for you · ${terms.command}`
+}
+
+export function statusText(
+  isPlaced: boolean,
+  count: number,
+  terms: Terms,
+): string | undefined {
+  return isPlaced || count === 0 ? undefined : statusLine(count, terms)
 }
 
 export function assignedToast(task: HtlTask, terms: Terms): string {
@@ -89,7 +99,7 @@ export function answeringText(
 
 export function notOpenText(taskId: number, open: readonly HtlTask[]): string {
   if (open.length === 0) {
-    return 'No open HTL tasks.'
+    return NO_OPEN_TASKS
   }
   const ids = open.map(task => `#${String(task.id)}`).join(', ')
   return `No open task #${String(taskId)}. Open: ${ids}.`

@@ -2,9 +2,11 @@ import type { PromptOrigin } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HtlRequest, HtlTask } from '../types'
-import { ENVELOPE, FOCUS_HINT, TERMS, originOf } from '../hooks/host'
+import { ENVELOPE, FOCUS_HINT, TERMS, TOOL, originOf } from '../hooks/host'
+import type { Origin } from '../hooks/core/index'
 import {
   SUBAGENT_REFUSAL,
+  TOOL_NAME,
   answeringText,
   answersTasks,
   assignedToast,
@@ -76,6 +78,25 @@ const ANSWERS: Readonly<Record<PromptOrigin['kind'], boolean>> = {
   plugin: false,
 }
 
+const ORIGINS: Readonly<Record<PromptOrigin['kind'], Origin>> = {
+  composer: 'user',
+  bridge: 'remote',
+  sdk: 'user',
+  'slack-ping': 'remote',
+  'task-notification': 'automation',
+  'scheduled-trigger': 'automation',
+  peer: 'automation',
+  'peer-send-message': 'automation',
+  'projects-relay': 'automation',
+  channel: 'automation',
+  coordinator: 'automation',
+  observer: 'automation',
+  'observer-activity': 'automation',
+  'auto-continuation': 'automation',
+  unclassified: 'automation',
+  plugin: 'automation',
+}
+
 function isKind(value: string): value is PromptOrigin['kind'] {
   return value in ANSWERS
 }
@@ -132,6 +153,20 @@ describe('answersTasks', () => {
         .filter(isKind)
         .map(kind => [kind, answersTasks(originOf(kind))]),
     ).toEqual(Object.entries(ANSWERS))
+  })
+})
+
+describe('host', () => {
+  test('originOf maps every origin kind Claude Code has', () => {
+    expect(
+      Object.keys(ORIGINS)
+        .filter(isKind)
+        .map(kind => [kind, originOf(kind)]),
+    ).toEqual(Object.entries(ORIGINS))
+  })
+
+  test('the tool name is mcp__, the plugin name, __ and the registered name', () => {
+    expect(TOOL).toBe(`mcp__htl__${TOOL_NAME}`)
   })
 })
 
