@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "htl",
+  "owner": {
+    "name": "lifebugz",
+    "email": "244013463+lifebugz@users.noreply.github.com"
+  },
+  "description": "Single-plugin marketplace for htl (human in the loop), which lets Claude hand you a job it truly cannot do and carry on when you answer.",
+  "plugins": [
+    {
+      "name": "htl",
+      "description": "Human in the loop: Claude hands you a job it truly cannot do (a 2FA login, a missing secret, a physical step, a payment), you answer in a pane, and Claude carries on.",
+      "author": {
+        "name": "lifebugz"
+      },
+      "category": "productivity",
+      "source": "./harnesses/claude-code",
+      "homepage": "https://github.com/lifebugz/htl"
+    }
+  ]
+}

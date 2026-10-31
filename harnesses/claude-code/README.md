@@ -5,7 +5,7 @@ does not exist yet, a cable to plug in, a payment, or a machine it cannot reach.
 Without this mod it can only stop and explain in prose. With it, Claude hands
 you the job as a **task**, you answer in a pane, and Claude carries on.
 
-![Claude cannot log in to Fly for you, so it assigns the login as a task and stops. You log in, press a, add a message and press Enter. Claude checks the login and deploys.](assets/demo.gif)
+![Claude cannot log in to Fly for you, so it assigns the login as a task and stops. You log in, press a, add a message and press Enter. Claude checks the login and deploys.](../../docs/media/demo.gif)
 
 In this recording Claude can't do the Fly login (it needs a browser and a 2FA
 code), so it hands it over and waits. You log in, press `a` (Accept), add a
@@ -26,9 +26,9 @@ Answer `y` to add the marketplace, then pick a scope.
 ## How it works
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/flow-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/flow-light.svg">
-  <img alt="How htl works, in three lanes: Claude, the htl mod, and you. Turn 1: Claude hits a job it can't do, tries its own tools, then calls assign_task. The mod checks the request and either refuses it with what to fix, or shows the task and tells Claude at once that it is assigned, so Claude ends its turn. While no turn runs, you do the job and pick Accept, Reject or You can do this, with an optional message. The mod sends that as your message, which starts turn 2: Claude runs its check and continues, finds another way, or does the job itself." src="assets/flow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/media/flow-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="../../docs/media/flow-light.svg">
+  <img alt="How htl works, in three lanes: Claude, the htl mod, and you. Turn 1: Claude hits a job it can't do, tries its own tools, then calls assign_task. The mod checks the request and either refuses it with what to fix, or shows the task and tells Claude at once that it is assigned, so Claude ends its turn. While no turn runs, you do the job and pick Accept, Reject or You can do this, with an optional message. The mod sends that as your message, which starts turn 2: Claude runs its check and continues, finds another way, or does the job itself." src="../../docs/media/flow-light.svg">
 </picture>
 
 Nothing waits inside a tool call: the tool answers at once, Claude's turn ends,
@@ -42,7 +42,7 @@ done.
 
 The task opens in a pane called **HTL tasks**. One card shows at a time:
 
-![A task card: number and mode, the title, the blocker and why, what Claude tried, numbered steps, how Claude will check, and the keys a: Accept, r: Reject, y: You can do this.](assets/task-card.png)
+![A task card: number and mode, the title, the blocker and why, what Claude tried, numbered steps, how Claude will check, and the keys a: Accept, r: Reject, y: You can do this.](../../docs/media/task-card.png)
 
 | Key | Button          | What Claude receives                                                            |
 | :-- | :-------------- | :------------------------------------------------------------------------------ |
@@ -54,12 +54,12 @@ The task opens in a pane called **HTL tasks**. One card shows at a time:
 After a button, you can type an optional message to Claude. Enter sends it,
 even when the field is empty.
 
-![After Accept, the card asks for an optional message to Claude, with a text field that Enter sends.](assets/message.png)
+![After Accept, the card asks for an optional message to Claude, with a text field that Enter sends.](../../docs/media/message.png)
 
 Your answer arrives as your own message and starts Claude's next turn. Here
 Claude runs its check, then goes on with the deploy:
 
-![The answer arrives as the user's message: task #1 accepted, the message, and a request to check it worked. Claude runs fly auth whoami and fly deploy and reports the app's address.](assets/answer.png)
+![The answer arrives as the user's message: task #1 accepted, the message, and a request to check it worked. Claude runs fly auth whoami and fly deploy and reports the app's address.](../../docs/media/answer.png)
 
 The pane opens by itself and takes the keyboard only when your prompt is empty,
 so it never steals keys while you type. In the terminal, if it does not have
@@ -114,12 +114,12 @@ once, and your answer starts the next turn.
 In a 100-column terminal, the task waits in the status line, and `/htl` shows
 it:
 
-![In a narrow terminal: the line under Claude's answer, the /htl command being typed, and the status line "htl: 1 task waiting for you · /htl".](assets/status-line.png)
+![In a narrow terminal: the line under Claude's answer, the /htl command being typed, and the status line "htl: 1 task waiting for you · /htl".](../../docs/media/status-line.png)
 
 There, `/htl` opens the pane inline, above the prompt, instead of beside the
 conversation:
 
-![The same task card drawn inline in a rounded frame above the prompt.](assets/inline-pane.png)
+![The same task card drawn inline in a rounded frame above the prompt.](../../docs/media/inline-pane.png)
 
 ## Helpful, not annoying
 

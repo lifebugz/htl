@@ -1,0 +1,15 @@
+{
+  "extends": "./tooling/tsconfig/strict.json",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.js", "*.ts", "tooling/scripts", "tooling/eslint"]
+}
