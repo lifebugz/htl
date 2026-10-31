@@ -1,5 +1,3 @@
-import type { PromptOrigin } from 'claude-code'
-
 import type {
   Blocker,
   ClosedTask,
@@ -10,7 +8,6 @@ import type {
   SecretsMode,
 } from '../types'
 
-export const TOOL = 'mcp__htl__assign_task'
 export const TOOL_NAME = 'assign_task'
 export const MAX_OPEN = 3
 const NOT_ASSIGNED = 'Not assigned.'
@@ -24,25 +21,25 @@ export const BLOCKERS: readonly Blocker[] = [
 ]
 export const MODES: readonly Mode[] = ['now', 'parallel']
 const DECISIONS: readonly Decision[] = ['accept', 'reject', 'handback']
-const REMOTE_ORIGINS: readonly PromptOrigin['kind'][] = ['bridge', 'slack-ping']
-const ANSWERING_ORIGINS: readonly PromptOrigin['kind'][] = [
-  'composer',
-  'bridge',
-  'sdk',
-  'slack-ping',
-]
+const ANSWERING: readonly Origin[] = ['user', 'remote']
+const REMOTE: readonly Origin[] = ['remote']
 
 const REQUIRED = ['title', 'steps', 'blocker', 'why', 'tried', 'mode'] as const
 const FIELDS: ReadonlySet<string> = new Set([...REQUIRED, 'check'])
-const ENVELOPE: ReadonlySet<string> = new Set([
-  'tool',
-  'tool_use_id',
-  'agentId',
-  'requestMeta',
-  'consent',
-])
 const ONE_PASSWORD_EVIDENCE = /\bop\b|op:\/\/|1password/i
 const OP_PLACEHOLDER = /op:\/\/\S*</
+
+export interface Terms {
+  readonly tool: string
+  readonly agent: string
+  readonly command: string
+  readonly askTool: string
+  readonly host: string
+  readonly shellPrefix: string
+  readonly remote: string
+}
+
+export type Origin = 'user' | 'remote' | 'self' | 'automation'
 
 export type Parsed =
   | { request: HtlRequest; problems?: undefined }
@@ -75,12 +72,12 @@ function isRefused(task: ClosedTask): task is Refused {
   return task.decision !== 'accept'
 }
 
-export function answersTasks(kind: PromptOrigin['kind']): boolean {
-  return isOneOf(ANSWERING_ORIGINS, kind)
+export function answersTasks(origin: Origin): boolean {
+  return isOneOf(ANSWERING, origin)
 }
 
-export function isRemote(kind: PromptOrigin['kind']): boolean {
-  return isOneOf(REMOTE_ORIGINS, kind)
+export function isRemote(origin: Origin): boolean {
+  return isOneOf(REMOTE, origin)
 }
 
 export type HtlCommand =
@@ -159,7 +156,10 @@ function checkField(value: unknown): Field<string | undefined> {
   return { value: value.trim() === '' ? undefined : value.trim() }
 }
 
-export function parseRequest(e: unknown): Parsed {
+export function parseRequest(
+  e: unknown,
+  envelope: ReadonlySet<string>,
+): Parsed {
   if (!isRecord(e)) {
     return { problems: ['the input must be an object'] }
   }
@@ -172,7 +172,7 @@ export function parseRequest(e: unknown): Parsed {
   const check = checkField(e['check'])
 
   const extra = Object.keys(e).filter(
-    key => !FIELDS.has(key) && !ENVELOPE.has(key),
+    key => !FIELDS.has(key) && !envelope.has(key),
   )
   const problems = [
     ...[title, steps, blocker, why, tried, mode, check].flatMap(field =>
@@ -217,14 +217,16 @@ function normalizeTitle(title: string): string {
 export function validateRequest(
   request: HtlRequest,
   session: SessionTasks,
+  terms: Terms,
 ): string | undefined {
-  const refusal = refusalOf(request, session)
+  const refusal = refusalOf(request, session, terms)
   return refusal === undefined ? undefined : `${NOT_ASSIGNED} ${refusal}`
 }
 
 function refusalOf(
   request: HtlRequest,
   session: SessionTasks,
+  terms: Terms,
 ): string | undefined {
   if (session.open.length >= MAX_OPEN) {
     return `The user already has ${String(MAX_OPEN)} open tasks. Wait for them.`
@@ -243,7 +245,7 @@ function refusalOf(
   }
 
   if (request.blocker === 'secret' && OP_PLACEHOLDER.test(request.steps)) {
-    return `The steps hold the op://<vault>/<item>/<field> placeholder. Name the real vault, item and field, or leave the op:// suggestion out, then call ${TOOL} again.`
+    return `The steps hold the op://<vault>/<item>/<field> placeholder. Name the real vault, item and field, or leave the op:// suggestion out, then call ${terms.tool} again.`
   }
   if (session.secrets !== '1password' || request.blocker !== 'secret') {
     return undefined
@@ -270,17 +272,19 @@ export function unreachable(value: never): never {
   throw new Error(`htl: unexpected value ${String(value)}`)
 }
 
-const GENERAL_RULES = `Assign a job to the user that you truly cannot do yourself: a 2FA, browser or CAPTCHA login, a secret that does not exist yet, a physical action, a payment or a legal signature, or a system your tools cannot reach. The user sees it in a pane with Accept, Reject and "You can do this", and can add a message. Their answer arrives later as a user message.
+function generalRules(terms: Terms): string {
+  return `Assign a job to the user that you truly cannot do yourself: a 2FA, browser or CAPTCHA login, a secret that does not exist yet, a physical action, a payment or a legal signature, or a system your tools cannot reach. The user sees it in a pane with Accept, Reject and "You can do this", and can add a message. Their answer arrives later as a user message.
 
 Rules:
 - This is a last resort. First try the job yourself, with your own tools.
 - Never use it for work your tools can do: edit or create files, run commands, install packages, commit, generate a random secret, or write a placeholder in .env.example.
-- For a question or a choice, use AskUserQuestion. If facts are missing, ask in plain text. Neither is a task.
+- For a question or a choice, use ${terms.askTool}. If facts are missing, ask in plain text. Neither is a task.
 - If the user already said they will do it, don't assign it.
 - Never ask the user for a secret value, and never print one.
 - Never feed a password into sudo or a login prompt, even from a password manager. Assign the command to the user as a no_access task.
 - Put related steps in one task, and never assign the same job twice.
 - Pick mode "now" when your next step needs the result, else "parallel".`
+}
 
 const ONE_PASSWORD_RULES = `
 
@@ -290,25 +294,28 @@ The 1Password CLI (op) is installed:
 - A 1Password Touch ID or unlock prompt is not a task: the user answers it. If \`op\` fails because 1Password is locked, not signed in, or its CLI integration is off, that is not a task either: say so in one line and ask whether to use 1Password or where else they keep the secret.
 - A "secret" task is only for a secret you could not find in 1Password: "tried" says what you checked in 1Password. The steps may suggest an op://<vault>/<item>/<field> reference to save it under, with real names; the user decides where it goes.`
 
-export function toolDescription(secrets: SecretsMode): string {
+export function toolDescription(secrets: SecretsMode, terms: Terms): string {
   switch (secrets) {
     case '1password':
-      return GENERAL_RULES + ONE_PASSWORD_RULES
+      return generalRules(terms) + ONE_PASSWORD_RULES
     case 'none':
-      return GENERAL_RULES
+      return generalRules(terms)
     default:
       return unreachable(secrets)
   }
 }
 
-const STEPS =
-  'Exact Markdown steps for the user. A shell command they should run gets a ! prefix, so they can paste it into Claude Code: `! gh auth login`.'
+function stepsText(terms: Terms): string {
+  return `Exact Markdown steps for the user. A shell command they should run gets a ${terms.shellPrefix} prefix, so they can paste it into ${terms.host}: \`${terms.shellPrefix} gh auth login\`.`
+}
 const STEPS_FOR_SECRETS =
   ' For a secret task, the steps may suggest a 1Password reference to save it under, `op://<vault>/<item>/<field>` with real names; the user decides where it goes.'
 
 export function inputSchema(
   secrets: SecretsMode,
+  terms: Terms,
 ): Readonly<Record<string, unknown>> {
+  const steps = stepsText(terms)
   return {
     type: 'object',
     properties: {
@@ -320,7 +327,7 @@ export function inputSchema(
       steps: {
         type: 'string',
         description:
-          secrets === '1password' ? STEPS + STEPS_FOR_SECRETS : STEPS,
+          secrets === '1password' ? steps + STEPS_FOR_SECRETS : steps,
       },
       blocker: {
         type: 'string',
@@ -372,8 +379,8 @@ export function assignedText(task: HtlTask): string {
 export const SUBAGENT_REFUSAL =
   'Only the main conversation can assign tasks; put the blocker in your final report.'
 
-export function refusalText(problems: readonly string[]): string {
-  return `The task was not assigned: ${problems.join('; ')}. Fix these fields and call ${TOOL} again.`
+export function refusalText(problems: readonly string[], terms: Terms): string {
+  return `The task was not assigned: ${problems.join('; ')}. Fix these fields and call ${terms.tool} again.`
 }
 
 export function gateDenial(task: HtlTask): string {
@@ -390,26 +397,32 @@ function taskList(tasks: readonly HtlTask[]): string {
   return `${tasks.length === 1 ? 'task' : 'tasks'} ${ids}`
 }
 
-export function reminderLine(tasks: readonly HtlTask[]): string {
-  return `⏳ htl: waiting for you on ${taskList(tasks)} · /htl`
+export function reminderLine(tasks: readonly HtlTask[], terms: Terms): string {
+  return `⏳ htl: waiting for you on ${taskList(tasks)} · ${terms.command}`
 }
 
-export function statusLine(count: number): string {
-  return `${String(count)} ${count === 1 ? 'task' : 'tasks'} waiting for you · /htl`
+export function statusLine(count: number, terms: Terms): string {
+  return `${String(count)} ${count === 1 ? 'task' : 'tasks'} waiting for you · ${terms.command}`
 }
 
-export function assignedToast(task: HtlTask): string {
-  return `htl: Claude needs you for task ${quoted(task)}`
+export function assignedToast(task: HtlTask, terms: Terms): string {
+  return `htl: ${terms.agent} needs you for task ${quoted(task)}`
 }
 
-export function decisionToast(task: HtlTask, decision: Decision): string {
-  return `htl: task #${String(task.id)} ${decisionPast(decision)}`
+export function decisionToast(
+  task: HtlTask,
+  decision: Decision,
+  terms: Terms,
+): string {
+  return `htl: task #${String(task.id)} ${decisionPast(decision, terms)}`
 }
 
-export const HTL_USAGE =
-  'Answer a task with /htl accept, /htl reject or /htl handback ("you can do this") and its number, then an optional message: /htl accept 1 done with my work account.'
+export function htlUsage(terms: Terms): string {
+  const { command } = terms
+  return `Answer a task with ${command} accept, ${command} reject or ${command} handback ("you can do this") and its number, then an optional message: ${command} accept 1 done with my work account.`
+}
 
-export function taskListText(tasks: readonly HtlTask[]): string {
+export function taskListText(tasks: readonly HtlTask[], terms: Terms): string {
   const cards = tasks.map(task =>
     [
       `#${String(task.id)} · ${task.mode.toUpperCase()} · ${task.title}`,
@@ -417,14 +430,19 @@ export function taskListText(tasks: readonly HtlTask[]): string {
       task.steps,
     ].join('\n'),
   )
-  return ['Open HTL tasks:', ...cards, HTL_USAGE].join('\n\n')
+  return ['Open HTL tasks:', ...cards, htlUsage(terms)].join('\n\n')
 }
 
-export const NOT_YOURS =
-  'Only you can answer an HTL task: type the command yourself, here or through Remote Control.'
+export function notYours(terms: Terms): string {
+  return `Only you can answer an HTL task: type the command yourself, here or through ${terms.remote}.`
+}
 
-export function answeringText(task: HtlTask, decision: Decision): string {
-  return `Sending your answer to task ${quoted(task)}: ${decisionPast(decision)}. If /htl still lists the task, it was not sent.`
+export function answeringText(
+  task: HtlTask,
+  decision: Decision,
+  terms: Terms,
+): string {
+  return `Sending your answer to task ${quoted(task)}: ${decisionPast(decision, terms)}. If ${terms.command} still lists the task, it was not sent.`
 }
 
 export function notOpenText(taskId: number, open: readonly HtlTask[]): string {
@@ -435,18 +453,18 @@ export function notOpenText(taskId: number, open: readonly HtlTask[]): string {
   return `No open task #${String(taskId)}. Open: ${ids}.`
 }
 
-export function notSentToast(task: HtlTask): string {
-  return `htl: the answer to task #${String(task.id)} was not sent. Answer again in /htl.`
+export function notSentToast(task: HtlTask, terms: Terms): string {
+  return `htl: the answer to task #${String(task.id)} was not sent. Answer again in ${terms.command}.`
 }
 
-function decisionPast(decision: Decision): string {
+function decisionPast(decision: Decision, terms: Terms): string {
   switch (decision) {
     case 'accept':
       return 'accepted'
     case 'reject':
       return 'rejected'
     case 'handback':
-      return 'handed back to Claude'
+      return `handed back to ${terms.agent}`
     default:
       return unreachable(decision)
   }
@@ -505,15 +523,15 @@ export function cardHeader(
   task: HtlTask,
   position: number,
   total: number,
-  showsFocusHint: boolean,
+  hint?: string,
 ): string {
   const parts = [
     `#${String(task.id)}`,
     task.mode.toUpperCase(),
     `${String(position)} of ${String(total)}`,
   ]
-  if (showsFocusHint) {
-    parts.push('ctrl+x tab to use')
+  if (hint !== undefined) {
+    parts.push(hint)
   }
   return parts.join(' · ')
 }

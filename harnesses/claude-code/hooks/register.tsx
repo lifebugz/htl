@@ -2,11 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Decision, HtlTask, SecretsMode, View } from '../types'
+import { ENVELOPE, FOCUS_HINT, TERMS, TOOL, originOf } from './host'
 import {
-  HTL_USAGE,
-  NOT_YOURS,
   SUBAGENT_REFUSAL,
-  TOOL,
   TOOL_NAME,
   answersTasks,
   answeringText,
@@ -19,10 +17,12 @@ import {
   decisionPrompt,
   decisionToast,
   gateDenial,
+  htlUsage,
   inputSchema,
   isRemote,
   notOpenText,
   notSentToast,
+  notYours,
   parseHtlArgs,
   parseRequest,
   refusalText,
@@ -110,8 +110,8 @@ async function registerTool($: EngineInterface): Promise<void> {
   try {
     await $.tool.register({
       name: TOOL_NAME,
-      description: toolDescription(secrets),
-      inputSchema: inputSchema(secrets),
+      description: toolDescription(secrets, TERMS),
+      inputSchema: inputSchema(secrets, TERMS),
       isDeferred: false,
     })
   } catch (error) {
@@ -130,7 +130,7 @@ function showStatus(
   isPlaced: boolean,
   count: number,
 ): void {
-  $.ui.status(isPlaced || count === 0 ? undefined : statusLine(count))
+  $.ui.status(isPlaced || count === 0 ? undefined : statusLine(count, TERMS))
 }
 
 async function notify($: EngineInterface, task: HtlTask): Promise<void> {
@@ -142,7 +142,7 @@ async function notify($: EngineInterface, task: HtlTask): Promise<void> {
     logError($, 'the pane did not open', error)
   }
   try {
-    $.ui.toast(assignedToast(task))
+    $.ui.toast(assignedToast(task, TERMS))
     showStatus($, isPlaced, (await read($, tasks)).length)
   } catch (error) {
     logError($, 'the notice failed', error)
@@ -150,16 +150,20 @@ async function notify($: EngineInterface, task: HtlTask): Promise<void> {
 }
 
 async function assign($: EngineInterface, e: unknown): Promise<string> {
-  const parsed = parseRequest(e)
+  const parsed = parseRequest(e, ENVELOPE)
   if (parsed.problems !== undefined) {
-    return refusalText(parsed.problems)
+    return refusalText(parsed.problems, TERMS)
   }
 
-  const refusal = validateRequest(parsed.request, {
-    open: await read($, tasks),
-    closed: await read($, closed),
-    secrets: await detectSecrets($),
-  })
+  const refusal = validateRequest(
+    parsed.request,
+    {
+      open: await read($, tasks),
+      closed: await read($, closed),
+      secrets: await detectSecrets($),
+    },
+    TERMS,
+  )
   if (refusal !== undefined) {
     return refusal
   }
@@ -255,7 +259,7 @@ async function rollback(
       : current,
   )
   showStatus($, await isPanePlaced($), open.length)
-  $.ui.toast(notSentToast(task))
+  $.ui.toast(notSentToast(task, TERMS))
 }
 
 // Not one serial job: $.prompt.submit resolves only once the answer's turn
@@ -283,7 +287,7 @@ async function deliverAnswer(
   const { task } = committed
   const failure = await deliver($, decisionPrompt(task, decision, message))
   if (failure === undefined) {
-    $.ui.toast(decisionToast(task, decision))
+    $.ui.toast(decisionToast(task, decision, TERMS))
     return
   }
   logError($, `the answer to task #${String(task.id)} was not sent`, failure)
@@ -314,7 +318,7 @@ async function openPane(
     }
     logError($, 'the pane did not open', error)
   }
-  return isFromRemote ? { text: taskListText(open) } : {}
+  return isFromRemote ? { text: taskListText(open, TERMS) } : {}
 }
 
 async function pickDecision(
@@ -411,7 +415,7 @@ export const register: Register = on => {
   }).catch(async (_$, e, next) => next(e))
 
   on('prompt.submit', async ($, e, next) => {
-    const open = answersTasks(e.origin.kind)
+    const open = answersTasks(originOf(e.origin.kind))
       ? await disarm($)
       : await read($, tasks)
     if (open.length === 0) {
@@ -426,7 +430,9 @@ export const register: Register = on => {
       return result
     }
     const open = await read($, tasks)
-    return open.length === 0 ? result : { ...result, text: reminderLine(open) }
+    return open.length === 0
+      ? result
+      : { ...result, text: reminderLine(open, TERMS) }
   })
 
   // The commit is awaited so the reply names what really happened.
@@ -434,10 +440,14 @@ export const register: Register = on => {
     const command = parseHtlArgs(e.args)
     switch (command.kind) {
       case 'open':
-        return openPane($, await read($, tasks), isRemote(e.origin.kind))
+        return openPane(
+          $,
+          await read($, tasks),
+          isRemote(originOf(e.origin.kind)),
+        )
       case 'answer': {
-        if (!answersTasks(e.origin.kind)) {
-          return { text: NOT_YOURS }
+        if (!answersTasks(originOf(e.origin.kind))) {
+          return { text: notYours(TERMS) }
         }
         const { taskId, decision, message } = command
         const committed = await serial(async () => commit($, taskId, decision))
@@ -451,10 +461,10 @@ export const register: Register = on => {
             },
           )
         })
-        return { text: answeringText(committed.task, decision) }
+        return { text: answeringText(committed.task, decision, TERMS) }
       }
       case 'usage':
-        return { text: HTL_USAGE }
+        return { text: htlUsage(TERMS) }
       default:
         return unreachable(command)
     }
@@ -485,7 +495,9 @@ export const register: Register = on => {
             task,
             at + 1,
             open.length,
-            surface === 'terminal' && !e.props.isFocused,
+            surface === 'terminal' && !e.props.isFocused
+              ? FOCUS_HINT
+              : undefined,
           )}
         </Text>
         <Text weight="semibold">{task.title}</Text>
