@@ -3,21 +3,32 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { ClosedTask, HtlRequest, HtlTask } from '../types'
 import {
+  HTL_USAGE,
   MAX_OPEN,
+  NOT_YOURS,
+  SUBAGENT_REFUSAL,
+  answeringText,
   answersTasks,
   assignedText,
+  assignedToast,
+  blockerLabel,
   cardHeader,
   contextLine,
+  decisionLabel,
   decisionPrompt,
+  decisionToast,
   gateDenial,
   inputSchema,
   isRemote,
+  notOpenText,
+  notSentToast,
   parseHtlArgs,
   parseRequest,
   refusalText,
   reminderLine,
   sameTitle,
   statusLine,
+  taskListText,
   toolDescription,
   validateRequest,
 } from '../hooks/tasks'
@@ -465,5 +476,220 @@ describe('texts the user reads', () => {
     expect(
       cardHeader(task(4, { ...LOGIN, mode: 'parallel' }), 2, 2, false),
     ).toBe('#4 · PARALLEL · 2 of 2')
+  })
+})
+
+describe('every text, pinned', () => {
+  test('the tool description under 1password', () => {
+    expect(toolDescription('1password')).toBe(
+      [
+        'Assign a job to the user that you truly cannot do yourself: a 2FA, browser or CAPTCHA login, a secret that does not exist yet, a physical action, a payment or a legal signature, or a system your tools cannot reach. The user sees it in a pane with Accept, Reject and "You can do this", and can add a message. Their answer arrives later as a user message.',
+        '',
+        'Rules:',
+        '- This is a last resort. First try the job yourself, with your own tools.',
+        '- Never use it for work your tools can do: edit or create files, run commands, install packages, commit, generate a random secret, or write a placeholder in .env.example.',
+        '- For a question or a choice, use AskUserQuestion. If facts are missing, ask in plain text. Neither is a task.',
+        "- If the user already said they will do it, don't assign it.",
+        '- Never ask the user for a secret value, and never print one.',
+        '- Never feed a password into sudo or a login prompt, even from a password manager. Assign the command to the user as a no_access task.',
+        '- Put related steps in one task, and never assign the same job twice.',
+        '- Pick mode "now" when your next step needs the result, else "parallel".',
+        '',
+        'The 1Password CLI (op) is installed:',
+        '- Use a secret that is in 1Password through an op://<vault>/<item>/<field> reference: run the command with `op run --env-file=<file> -- <cmd>`, or render a config with `op inject -i <template> -o <file>`. A resolved file must be gitignored and deleted when you are done. For a secret the user keeps somewhere else, use it from there.',
+        '- Never let a value reach your output: don\'t run `op read`, `--reveal` or `--no-masking` in your own shell. To check that an item exists, discard the output: `op item get "<item>" --vault "<vault>" > /dev/null`.',
+        '- A 1Password Touch ID or unlock prompt is not a task: the user answers it. If `op` fails because 1Password is locked, not signed in, or its CLI integration is off, that is not a task either: say so in one line and ask whether to use 1Password or where else they keep the secret.',
+        '- A "secret" task is only for a secret you could not find in 1Password: "tried" says what you checked in 1Password. The steps may suggest an op://<vault>/<item>/<field> reference to save it under, with real names; the user decides where it goes.',
+      ].join('\n'),
+    )
+  })
+  test('the input schema under 1password', () => {
+    expect(inputSchema('1password')).toEqual({
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description:
+            'The job as a short instruction, e.g. "Log in to the GitHub CLI".',
+        },
+        steps: {
+          type: 'string',
+          description:
+            'Exact Markdown steps for the user. A shell command they should run gets a ! prefix, so they can paste it into Claude Code: `! gh auth login`. For a secret task, the steps may suggest a 1Password reference to save it under, `op://<vault>/<item>/<field>` with real names; the user decides where it goes.',
+        },
+        blocker: {
+          type: 'string',
+          enum: [
+            'secret',
+            'login',
+            'physical',
+            'payment_or_legal',
+            'no_access',
+          ],
+          description:
+            'secret: an API key, token or password that does not exist yet. login: a 2FA, browser or CAPTCHA login, or a sign-up. physical: something only hands can do: plug in a device or cable, touch a security key, press a button. payment_or_legal: a payment, a plan change, a signature or an agreement. no_access: a machine, network or app your tools cannot reach: another computer, a VPN, a GUI-only setting, a sudo password prompt.',
+        },
+        why: {
+          type: 'string',
+          description: 'Why no tool you have can do it, in 1-2 sentences.',
+        },
+        tried: {
+          type: 'string',
+          description: 'What you already tried or checked, and what happened.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['now', 'parallel'],
+          description:
+            'now: your next step needs the result, so you stop and wait. parallel: you keep doing only work that does not depend on it.',
+        },
+        check: {
+          type: 'string',
+          description:
+            'How you will confirm it is done, e.g. `gh auth status`. Optional.',
+        },
+      },
+      required: ['title', 'steps', 'blocker', 'why', 'tried', 'mode'],
+      additionalProperties: false,
+    })
+  })
+  test('the tool description under none', () => {
+    expect(toolDescription('none')).toBe(
+      [
+        'Assign a job to the user that you truly cannot do yourself: a 2FA, browser or CAPTCHA login, a secret that does not exist yet, a physical action, a payment or a legal signature, or a system your tools cannot reach. The user sees it in a pane with Accept, Reject and "You can do this", and can add a message. Their answer arrives later as a user message.',
+        '',
+        'Rules:',
+        '- This is a last resort. First try the job yourself, with your own tools.',
+        '- Never use it for work your tools can do: edit or create files, run commands, install packages, commit, generate a random secret, or write a placeholder in .env.example.',
+        '- For a question or a choice, use AskUserQuestion. If facts are missing, ask in plain text. Neither is a task.',
+        "- If the user already said they will do it, don't assign it.",
+        '- Never ask the user for a secret value, and never print one.',
+        '- Never feed a password into sudo or a login prompt, even from a password manager. Assign the command to the user as a no_access task.',
+        '- Put related steps in one task, and never assign the same job twice.',
+        '- Pick mode "now" when your next step needs the result, else "parallel".',
+      ].join('\n'),
+    )
+  })
+  test('the input schema under none', () => {
+    expect(inputSchema('none')).toEqual({
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description:
+            'The job as a short instruction, e.g. "Log in to the GitHub CLI".',
+        },
+        steps: {
+          type: 'string',
+          description:
+            'Exact Markdown steps for the user. A shell command they should run gets a ! prefix, so they can paste it into Claude Code: `! gh auth login`.',
+        },
+        blocker: {
+          type: 'string',
+          enum: [
+            'secret',
+            'login',
+            'physical',
+            'payment_or_legal',
+            'no_access',
+          ],
+          description:
+            'secret: an API key, token or password that does not exist yet. login: a 2FA, browser or CAPTCHA login, or a sign-up. physical: something only hands can do: plug in a device or cable, touch a security key, press a button. payment_or_legal: a payment, a plan change, a signature or an agreement. no_access: a machine, network or app your tools cannot reach: another computer, a VPN, a GUI-only setting, a sudo password prompt.',
+        },
+        why: {
+          type: 'string',
+          description: 'Why no tool you have can do it, in 1-2 sentences.',
+        },
+        tried: {
+          type: 'string',
+          description: 'What you already tried or checked, and what happened.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['now', 'parallel'],
+          description:
+            'now: your next step needs the result, so you stop and wait. parallel: you keep doing only work that does not depend on it.',
+        },
+        check: {
+          type: 'string',
+          description:
+            'How you will confirm it is done, e.g. `gh auth status`. Optional.',
+        },
+      },
+      required: ['title', 'steps', 'blocker', 'why', 'tried', 'mode'],
+      additionalProperties: false,
+    })
+  })
+  test('the toasts', () => {
+    expect(assignedToast(task(1))).toBe(
+      'htl: Claude needs you for task #1 "Log in to the GitHub CLI"',
+    )
+    expect(decisionToast(task(1), 'accept')).toBe('htl: task #1 accepted')
+    expect(decisionToast(task(1), 'reject')).toBe('htl: task #1 rejected')
+    expect(decisionToast(task(1), 'handback')).toBe(
+      'htl: task #1 handed back to Claude',
+    )
+    expect(notSentToast(task(1))).toBe(
+      'htl: the answer to task #1 was not sent. Answer again in /htl.',
+    )
+  })
+  test('the /htl replies', () => {
+    expect(answeringText(task(1), 'accept')).toBe(
+      'Sending your answer to task #1 "Log in to the GitHub CLI": accepted. If /htl still lists the task, it was not sent.',
+    )
+    expect(answeringText(task(1), 'reject')).toBe(
+      'Sending your answer to task #1 "Log in to the GitHub CLI": rejected. If /htl still lists the task, it was not sent.',
+    )
+    expect(answeringText(task(1), 'handback')).toBe(
+      'Sending your answer to task #1 "Log in to the GitHub CLI": handed back to Claude. If /htl still lists the task, it was not sent.',
+    )
+    expect(HTL_USAGE).toBe(
+      'Answer a task with /htl accept, /htl reject or /htl handback ("you can do this") and its number, then an optional message: /htl accept 1 done with my work account.',
+    )
+    expect(NOT_YOURS).toBe(
+      'Only you can answer an HTL task: type the command yourself, here or through Remote Control.',
+    )
+    expect(notOpenText(2, [])).toBe('No open HTL tasks.')
+    expect(notOpenText(2, [task(1), task(3)])).toBe(
+      'No open task #2. Open: #1, #3.',
+    )
+    expect(
+      taskListText([task(1), task(2, { ...SECRET, mode: 'parallel' })]),
+    ).toBe(
+      [
+        'Open HTL tasks:',
+        '',
+        '#1 · NOW · Log in to the GitHub CLI',
+        'login: The login needs a browser and a 2FA code.',
+        'Run `! gh auth login` and finish the browser login.',
+        '',
+        '#2 · PARALLEL · Create the Twilio auth token',
+        'secret: The token does not exist yet.',
+        'Create a token in the Twilio console and save it in 1Password as `op://Private/Twilio/auth token`.',
+        '',
+        'Answer a task with /htl accept, /htl reject or /htl handback ("you can do this") and its number, then an optional message: /htl accept 1 done with my work account.',
+      ].join('\n'),
+    )
+  })
+  test('the labels', () => {
+    expect(
+      (['accept', 'reject', 'handback'] as const).map(decisionLabel),
+    ).toEqual(['Accept', 'Reject', 'You can do this'])
+    expect(
+      (
+        [
+          'secret',
+          'login',
+          'physical',
+          'payment_or_legal',
+          'no_access',
+        ] as const
+      ).map(blockerLabel),
+    ).toEqual(['secret', 'login', 'physical', 'payment or legal', 'no access'])
+  })
+  test('the subagent refusal', () => {
+    expect(SUBAGENT_REFUSAL).toBe(
+      'Only the main conversation can assign tasks; put the blocker in your final report.',
+    )
   })
 })
