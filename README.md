@@ -42,9 +42,8 @@ two enabled plugins have the same name, Claude Code loads the hooks module of
 only one of them.
 
 If you already have `htl@lifebugz`, keep it: do not also install `htl@htl`.
-Today that entry still installs the 0.2.0 copy kept in cc-marketplace itself.
-Once cc-marketplace moves the entry to this repository, this command gets the
-new version (it refreshes the marketplace first); then restart Claude Code:
+This command updates it to the version the lifebugz marketplace pins (it
+refreshes the marketplace first); then restart Claude Code:
 
 ```shell
 claude plugin update htl@lifebugz
@@ -134,16 +133,10 @@ harness adds its own part below.
 htl reaches Claude Code users through two marketplaces, and each one sees a
 release in its own way.
 
-**Today:** the `htl@lifebugz` entry still installs the 0.2.0 copy kept in
-cc-marketplace itself, until a pull request there moves it to this repository.
-Until then, nothing in this repository reaches it, and step 5 below has nothing
-to change. Everything below about `htl@lifebugz` describes the entry after
-that move.
-
-| Plugin id                       | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
-| :------------------------------ | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| `htl@htl`                       | lifebugz/htl (this repository), `.claude-plugin/marketplace.json`                                        | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
-| `htl@lifebugz` (after the move) | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
+| Plugin id      | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
+| :------------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `htl@htl`      | lifebugz/htl (this repository), `.claude-plugin/marketplace.json`                                        | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
+| `htl@lifebugz` | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
 
 Three rules decide what users get:
 
@@ -193,7 +186,7 @@ To release 0.2.2:
 
 What each step reaches, for users who already have 0.2.1:
 
-| You did                                      | `htl@htl`                                   | `htl@lifebugz` (after the move)  |
+| You did                                      | `htl@htl`                                   | `htl@lifebugz`                   |
 | :------------------------------------------- | :------------------------------------------ | :------------------------------- |
 | Merged a change and kept `version` at 0.2.1  | stay on 0.2.1 (new installs get the change) | stay on 0.2.1 (new installs too) |
 | Merged the change with `version` 0.2.2 (1-3) | 0.2.2                                       | stay on 0.2.1                    |
