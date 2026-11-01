@@ -12,8 +12,9 @@ code), so it hands it over and waits. You log in, press `a` (Accept), add a
 message, and press Enter. Claude checks that the login worked, then deploys.
 (The demo uses a stand-in `fly` command, so nothing was really deployed.)
 
-Tested with Claude Code 2.1.308 in the terminal and the Desktop app, the 2.1.306
-VS Code extension, and Remote Control from claude.ai.
+Tested with Claude Code 2.1.316 in the terminal on macOS, and earlier with
+Claude Code 2.1.308 in the Desktop app, the 2.1.306 VS Code extension, and
+Remote Control from claude.ai.
 
 ## Install
 
